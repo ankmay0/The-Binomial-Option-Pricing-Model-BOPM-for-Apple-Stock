@@ -70,9 +70,20 @@ st.write(stock_data.tail())
 
 # Prediction
 st.subheader("🔮 Predicted Next Closing Price (Next Trading Day)")
-predicted_price = predict_price(scaled_data)
-if predicted_price is not None:
-    st.success(f"${predicted_price:.2f}")
+scaled_predicted_value = predict_price(scaled_data) # Get the scaled prediction
+
+if scaled_predicted_value is not None:
+    # Need to inverse transform the scaled prediction
+    # The scaler expects an array of shape (n_samples, n_features)
+    # We only have the scaled 'Close' prediction, which is the first feature
+    # Create a dummy array with the predicted value in the 'Close' column
+    dummy_array = np.zeros((1, len(features)))
+    dummy_array[0, features.index('Close')] = scaled_predicted_value # Place prediction in correct column
+
+    # Inverse transform the dummy array and get the first column (the price)
+    real_predicted_price = scaler.inverse_transform(dummy_array)[:, 0][0]
+
+    st.success(f"${real_predicted_price:.2f}") # <--- Displays actual price
 else:
     st.error("Not enough data to make a prediction. Try a later date.")
 
