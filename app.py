@@ -2,11 +2,12 @@ import streamlit as st
 import yfinance as yf
 import numpy as np
 import pandas as pd
+import math
+from datetime import datetime, timedelta
 from tensorflow.keras.models import load_model
 import joblib
-from datetime import datetime, timedelta
 
-# Load model and scaler bundle
+# Load model and scaler
 model = load_model('model.h5')
 bundle = joblib.load('scaler_and_features.joblib')
 scaler = bundle['scaler']
@@ -40,7 +41,7 @@ def prepare_data(symbol, end_date):
     scaled_data = scaler.transform(stock_data[features])
     return stock_data, scaled_data
 
-# Prediction
+# DL Prediction
 def predict_price(scaled_data):
     sequence_length = 60
     if len(scaled_data) < sequence_length:
@@ -49,8 +50,31 @@ def predict_price(scaled_data):
     prediction = model.predict(X)
     return prediction[0][0]
 
+# Binomial Option Pricing Model
+def binomial_option_pricing(S, K, T, r, sigma, N, option_type='call'):
+    dt = T / N
+    u = math.exp(sigma * math.sqrt(dt))
+    d = 1 / u
+    p = (math.exp(r * dt) - d) / (u - d)
+
+    asset_prices = [S * (u ** j) * (d ** (N - j)) for j in range(N + 1)]
+
+    if option_type == 'call':
+        option_values = [max(0, price - K) for price in asset_prices]
+    else:
+        option_values = [max(0, K - price) for price in asset_prices]
+
+    for i in range(N - 1, -1, -1):
+        option_values = [
+            math.exp(-r * dt) * (p * option_values[j + 1] + (1 - p) * option_values[j])
+            for j in range(i + 1)
+        ]
+
+    return option_values[0]
+
 # Streamlit UI
-st.title("🍎 AAPL Stock Price Predictor")
+st.set_page_config(page_title="Apple Stock Predictor", layout="centered")
+st.title("🍎 Apple Stock Predictor + Option Pricing")
 
 selected_date = st.date_input(
     "Select a date (historical prediction up to this date):",
@@ -64,26 +88,38 @@ st.write(f"Fetching AAPL data up to {selected_date}...")
 
 stock_data, scaled_data = prepare_data(symbol, selected_date)
 
-# Show data
 st.subheader("📄 Last 5 Rows of Preprocessed Data")
 st.write(stock_data.tail())
 
-# Prediction
-st.subheader("🔮 Predicted Next Closing Price (Next Trading Day)")
-scaled_predicted_value = predict_price(scaled_data) # Get the scaled prediction
+# DL Prediction
+st.subheader("🔮 DL Predicted Next Closing Price")
+predicted_price_dl = predict_price(scaled_data)
 
-if scaled_predicted_value is not None:
-    # Need to inverse transform the scaled prediction
-    # The scaler expects an array of shape (n_samples, n_features)
-    # We only have the scaled 'Close' prediction, which is the first feature
-    # Create a dummy array with the predicted value in the 'Close' column
-    dummy_array = np.zeros((1, len(features)))
-    dummy_array[0, features.index('Close')] = scaled_predicted_value # Place prediction in correct column
+if predicted_price_dl is not None:
+    st.success(f"${predicted_price_dl:.2f}")
 
-    # Inverse transform the dummy array and get the first column (the price)
-    real_predicted_price = scaler.inverse_transform(dummy_array)[:, 0][0]
+    # BOPM based on DL price
+    st.subheader("📉 Option Pricing based on DL Prediction")
 
-    st.success(f"${real_predicted_price:.2f}") # <--- Displays actual price
+    K = st.number_input("Strike Price (K)", value=float(predicted_price_dl))
+    T_days = st.slider("Time to Maturity (in days)", min_value=30, max_value=365, value=90)
+    T = T_days / 365
+    r = st.number_input("Risk-Free Interest Rate (%)", value=5.0) / 100
+    sigma = st.number_input("Volatility (σ)", value=0.25)
+    option_type = st.selectbox("Option Type", options=['call', 'put'])
+
+    option_price = binomial_option_pricing(
+        S=predicted_price_dl,
+        K=K,
+        T=T,
+        r=r,
+        sigma=sigma,
+        N=100,
+        option_type=option_type
+    )
+
+    st.success(f"{option_type.title()} Option Price: ${option_price:.2f}")
+
 else:
     st.error("Not enough data to make a prediction. Try a later date.")
 
