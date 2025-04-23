@@ -74,7 +74,7 @@ def binomial_option_pricing(S, K, T, r, sigma, N, option_type='call'):
 
 # Streamlit UI
 st.set_page_config(page_title="Apple Stock Predictor", layout="centered")
-st.title("🍎 Apple Stock Predictor + Option Pricing")
+st.title(" Apple Stock Predictor + Option Pricing")
 
 selected_date = st.date_input(
     "Select a date (historical prediction up to this date):",
